@@ -23,15 +23,14 @@
  *   Delete the file. Everything returns to normal immediately.
  *   No permanent changes, no config edits required.
  *
- * OPTIONAL CONFIG (opencode.json):
- *   {
- *     "plugin": [["file:///.opencode/plugin/lazy-load.ts", { "enforce": true }]]
- *   }
- *   enforce (default: true) — Block tool execution until load_tool is called.
- *   Set to false to allow tools to run without loading.
+ * ENFORCEMENT: mechanical, not prompt-based. The fetch wrapper intercepts the
+ * LLM's SSE response stream. Any tool_call for a tool that hasn't been loaded
+ * yet is rewritten in-flight to a load_tool({name: <tool>}) call — same
+ * tool_call_id, same opencode bookkeeping. The LLM literally cannot call a
+ * tool directly. No errors, no prompts, no blocking.
  */
 
-import type { Plugin, PluginInput, Hooks } from "@opencode-ai/plugin"
+import type { Plugin } from "@opencode-ai/plugin"
 import { tool } from "@opencode-ai/plugin"
 
 // ─── State ───────────────────────────────────────────────────────────────────
@@ -140,13 +139,17 @@ function wrapFetch(): void {
     if (!bodyText) return _originalFetch!.call(globalThis, input, init)
 
     let modified = false
-    let sessionID = "__unknown__"
-    // Extract sessionID from headers — same verified pattern as tokens-source plugin
+    let sessionID = ""
+    // Extract sessionID from headers. NO shared fallback — that causes
+    // cross-session state leaks. Per-request unique ID if header is missing.
     try {
       const h = init.headers
       const headers = h instanceof Headers ? h : Array.isArray(h) ? new Headers(h as any) : h ? new Headers(h as any) : new Headers()
-      sessionID = headers.get("x-opencode-session") || headers.get("x-session-id") || headers.get("X-Session-Id") || "__unknown__"
+      sessionID = headers.get("x-opencode-session") || headers.get("x-session-id") || headers.get("X-Session-Id") || ""
     } catch {}
+    if (!sessionID) {
+      sessionID = `__req_${Date.now()}_${Math.random().toString(36).slice(2)}__`
+    }
 
     try {
       const body = JSON.parse(bodyText)
@@ -191,17 +194,118 @@ function wrapFetch(): void {
     } catch {
       // Body wasn't valid JSON — send as-is
     }
-    return _originalFetch!.call(globalThis, input, init)
+    const response = await _originalFetch!.call(globalThis, input, init)
+
+    // ── Response-side: rewrite direct tool_calls to load_tool ──
+    // Only intercept SSE streaming responses. If not SSE, return as-is.
+    const contentType = response.headers.get("content-type") || ""
+    if (!contentType.includes("text/event-stream") || !response.body) return response
+
+    const transformed = response.body.pipeThrough(createSSETransform(sessionID))
+    return new Response(transformed, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    })
   }
+}
+
+// ─── SSE TransformStream ─────────────────────────────────────────────────────
+//
+// Parses OpenAI-compatible SSE chunks and rewrites tool_calls for unloaded
+// tools into load_tool calls.
+//
+// Verified against @ai-sdk/openai-compatible (the SSE parser opencode uses):
+//   - Line 758: iterates delta.tool_calls[]
+//   - Line 776: reads toolName from delta.tool_calls[].function.name
+//   - Line 783-785: stores toolCalls[index] = { function: { name, arguments } }
+//   - Line 826: subsequent chunks APPEND to toolCalls[index].function.arguments
+//   - Line 833: when accumulated args become parseable JSON, emits tool-call
+//
+// Rewrite strategy:
+//   - First chunk for an index (has function.name): if name != "load_tool" AND
+//     tool not loaded in this session, rewrite name → "load_tool" and set
+//     arguments → JSON.stringify({name: originalName}). This immediately
+//     becomes parseable JSON, so the AI SDK emits the tool-call event right
+//     away with toolName="load_tool".
+//   - Subsequent chunks for a rewritten index: set arguments to "" so the
+//     AI SDK appends nothing (the tool-call already fired).
+//   - Non-rewritten tool_calls: pass through unchanged.
+
+function createSSETransform(sessionID: string): TransformStream<Uint8Array, Uint8Array> {
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let buffer = ""
+  // Map from tool_call index → original tool name (only for rewritten calls)
+  const rewrittenIndices = new Map<number, string>()
+
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      buffer += decoder.decode(chunk, { stream: true })
+
+      // SSE events are separated by \n\n (or \r\n\r\n for CRLF providers)
+      const events = buffer.split(/\n\n|\r\n\r\n/)
+      buffer = events.pop() || ""
+
+      for (const event of events) {
+        const lines = event.split(/\n|\r\n/)
+        for (const line of lines) {
+          if (!line.startsWith("data:")) continue
+          const data = line.startsWith("data: ") ? line.slice(6) : line.slice(5)
+          if (data === "[DONE]") {
+            controller.enqueue(encoder.encode("data: [DONE]\n\n"))
+            continue
+          }
+
+          try {
+            const parsed = JSON.parse(data)
+            // OpenAI-compatible: choices[0].delta.tool_calls[]
+            const toolCalls = parsed?.choices?.[0]?.delta?.tool_calls
+            if (Array.isArray(toolCalls)) {
+              for (const tc of toolCalls) {
+                if (!tc || !tc.function) continue
+
+                if (tc.function.name) {
+                  // First chunk for this tool_call index — has the tool name
+                  const name = tc.function.name
+                  if (name !== "load_tool") {
+                    const loaded = sessionLoaded.get(sessionID)
+                    if (!loaded || !loaded.has(name)) {
+                      // Tool not loaded — rewrite to load_tool({name})
+                      rewrittenIndices.set(tc.index, name)
+                      tc.function.name = "load_tool"
+                      tc.function.arguments = JSON.stringify({ name })
+                    }
+                  }
+                } else if (rewrittenIndices.has(tc.index) && tc.function.arguments !== undefined) {
+                  // Continuation of a rewritten tool_call — drop the args piece.
+                  // We already sent the full rewritten args in the first chunk.
+                  tc.function.arguments = ""
+                }
+              }
+            }
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`))
+          } catch {
+            // Not valid JSON — pass through unchanged
+            controller.enqueue(encoder.encode(`data: ${data}\n\n`))
+          }
+        }
+      }
+    },
+    flush(controller) {
+      // Flush any remaining buffered bytes
+      if (buffer) {
+        controller.enqueue(encoder.encode(buffer))
+      }
+    },
+  })
 }
 
 // ─── Plugin ──────────────────────────────────────────────────────────────────
 
-const LazyLoadPlugin: Plugin = async (_input: PluginInput, options) => {
-  const opts = options as Record<string, unknown> | undefined
-  const enforce = opts?.enforce !== false // default: true
-
-  // Wrap fetch to intercept MCP tools in the HTTP body
+const LazyLoadPlugin: Plugin = async (_input, _options) => {
+  // Wrap fetch to intercept MCP tools in the HTTP body (request side) and
+  // rewrite direct tool_calls to load_tool (response side).
   wrapFetch()
 
   return {
@@ -297,28 +401,6 @@ const LazyLoadPlugin: Plugin = async (_input: PluginInput, options) => {
       // Strip parameter schema to minimal — this is what the LLM sees in the API call
       // (output.parameters stays untouched so validation still works on the opencode side)
       outAny.jsonSchema = EMPTY_SCHEMA
-    },
-
-    // ── Hook: tool.execute.before ────────────────────────────────────────────
-    //
-    // Enforces that load_tool was called before a tool can execute.
-    // When enforce=true (default), throws an error if the tool hasn't been
-    // loaded in this session. The error message tells the LLM exactly what
-    // to do, so it calls load_tool and retries.
-    //
-    // When enforce=false, this hook does nothing — tools run regardless.
-    // The LLM might still use tools without loading, but token savings remain.
-
-    async "tool.execute.before"(input, _output) {
-      if (!enforce) return
-      if (input.tool === "load_tool") return
-
-      const loaded = sessionLoaded.get(input.sessionID)
-      if (!loaded || !loaded.has(input.tool)) {
-        throw new Error(
-          `Tool "${input.tool}" not loaded yet. Call load_tool("${input.tool}") first.`,
-        )
-      }
     },
   }
 }
