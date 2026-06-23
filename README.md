@@ -22,7 +22,7 @@ Strips tool definitions from every LLM request. Loads tools and MCPs only when n
 
 Every message sent to the LLM includes full tool definitions — descriptions, parameter schemas, JSON structures. With 12+ built-in tools and MCP servers, that's thousands of tokens consumed by tool schemas alone, on every single request, even if the LLM only uses one tool.
 
-**opencode lazy load plugin** eliminates this. It strips all tool definitions to a minimal pointer. The LLM calls `load_tool()` to retrieve the full instructions and schema before using a tool. Once loaded, the tool is restored for the remainder of the session.
+**opencode lazy load plugin** eliminates this. It strips all tool definitions to a minimal pointer. The LLM calls `load_tool()` to retrieve the full instructions and schema before using a tool. Once loaded, the tool is restored for the remainder of the turn.
 
 **Use cases:**
 - 📉 **Reduce token usage** — cut tools and MCPs costs by 80%+ per request
@@ -32,15 +32,25 @@ Every message sent to the LLM includes full tool definitions — descriptions, p
 
 ---
 
-## How Much It Saves
-
+## How Much Tokesns It Saves for tools and MCPs
+The following example table  for defult Opencode setup which is ~10k Tokens + Chrom devtool MCP
 | Setup | Before | After | Saved |
 |---|---|---|---|
-| 12 built-in tools | ~6,900 tokens | ~1,100 tokens | **~84%** |
-| 12 built-in + 38 MCP tools | ~14,200 tokens | ~2,200 tokens | **~85%** |
-| 12 built-in + 100+ MCP tools | ~30,000 tokens | ~3,500 tokens | **~88%** |
+| 12 built-in tools | ~6,900 tokens | ~650 tokens | **~91%** |
+| Chrom Devtool MCP | ~17,900 tokens | ZERO tokens | **~100%** |
+| 12 built-in + 10 MCPs | ~~6,900 tokens | ~650 tokens | **~91%** |
 
+**Reducing the opencode's total tokens from ~10k to ~4.9K**
 Savings scale with the number of tools. The more MCP servers you connect, the more you save.
+
+---
+## How It Works
+
+The plugin intercepts tool definitions before they reach the LLM. It replaces full descriptions and schemas with a minimal pointer. When the LLM needs a tool, it calls `load_tool()` to retrieve the complete instructions.
+
+Once a tool is loaded, it stays loaded for the current turn — no reload needed within the same request. On the next user message, the loaded state resets and the LLM loads tools fresh.
+
+The plugin handles all tool types automatically: built-in tools, user-installed tools, and MCP server tools. No configuration needed — detection is automatic.
 
 ---
 
@@ -67,16 +77,6 @@ Same — clone the repo, copy the plugin file into your project's `.opencode\plu
 ### Uninstall
 
 Delete the file. Everything returns to normal immediately.
-
----
-
-## How It Works
-
-The plugin intercepts tool definitions before they reach the LLM. It replaces full descriptions and schemas with a minimal pointer. When the LLM needs a tool, it calls `load_tool()` to retrieve the complete instructions.
-
-Once a tool is loaded, it stays loaded for the session — no reload needed on subsequent messages.
-
-The plugin handles all tool types automatically: built-in tools, user-installed tools, and MCP server tools. No configuration needed — detection is automatic.
 
 ---
 
