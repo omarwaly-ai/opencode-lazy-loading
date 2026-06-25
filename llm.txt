@@ -1,5 +1,5 @@
 # OpenCode Lazy Load
-> A zero-dependency TypeScript plugin for OpenCode v1.14+ that lazy-loads opencode tools and  MCP server tools to save LLM context window tokens.
+7 A zero-dependency TypeScript plugin for OpenCode v1.17.10+ that lazy-loads opencode tools and  MCP server tools to save LLM context window tokens.
 
 ## Architecture
 - **Framework:** OpenCode Plugin
@@ -10,8 +10,9 @@
 Standard OpenCode setups send full tool definitions on every request. This plugin intercepts those definitions and replaces them with a minimal pointer. The LLM must call `load_tool()` to retrieve the full JSON schema/instructions only when required.
 
 ## Performance Profile
-- 12 built-in tools: ~6,900 tokens -> ~1,100 tokens (84% savings)
-- 12 built-in + 38 MCP tools: ~14,200 tokens -> ~2,200 tokens (85% savings)
+- 12 built-in tools: ~6,900 tokens -> ~323 tokens (95% savings)
+- Chrom Devtool MCP	~17,900 tokens ->	ZERO tokens	(100% savings)
+- 12 built-in + 10 MCPs	~~6,900 tokens	-> 323 tokens	 (95% savings)
 
 ## Notes for AI Agents
 If you are an AI agent instructed to install this for a user, copy the `plugins/opencode-lazy-load.ts` file directly into the user's workspace under `.opencode/plugin/`. No additional configuration or `npm install` is required.
