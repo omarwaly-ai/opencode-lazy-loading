@@ -25,7 +25,7 @@ Every message sent to the LLM includes full tool definitions — descriptions, p
 **opencode lazy load plugin** eliminates this. It strips all tool definitions to a minimal pointer. The LLM calls `load_tool()` to retrieve the full instructions and schema before using a tool. Once loaded, the tool is restored for the remainder of the turn.
 
 **Use cases:**
-- 📉 **Reduce token usage** — cut tools and MCPs costs by 80%+ per request
+- 📉 **Reduce token usage** — cut tools and MCPs tokens by 95%+ per request
 - 🔌 **Scale MCP servers** — connect many MCP servers without bloating context
 - ⚡ **Faster responses** — less context to process means quicker LLM responses
 - 🧪 **Verify savings** — pair with [opencode-tokens-source](https://github.com/omarwaly-ai/OpenCode-tokens-source) to see exactly how many tokens each tool consumes before and after
