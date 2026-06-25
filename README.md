@@ -38,7 +38,7 @@ The following example table  for defult Opencode setup which is ~10k Tokens + Ch
 |---|---|---|---|
 | 12 built-in tools | ~6,900 tokens | ~323 tokens | **~95%** |
 | Chrom Devtool MCP | ~17,900 tokens | ZERO tokens | **~100%** |
-| 12 built-in + 10 MCPs | ~~6,900 tokens | ~650 tokens | **~95%** |
+| 12 built-in + 10 MCPs | ~~6,900 tokens | ~323 tokens | **~95%** |
 
 **Reducing the opencode's total tokens from ~10k to ~3.7K**
 Savings scale with the number of tools. The more MCP servers you connect, the more you save.
