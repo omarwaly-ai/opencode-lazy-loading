@@ -37,7 +37,7 @@ The following example table  for defult Opencode setup which is ~10k Tokens + Ch
 | Setup | Before | After | Saved |
 |---|---|---|---|
 | 12 built-in tools | ~6,900 tokens | ~323 tokens | **~95%** |
-| Chrom Devtool MCP | ~17,900 tokens | ZERO tokens | **~100%** |
+| Chrom Devtool MCP | ~17,900 tokens | ZERO tokens | **100%** |
 | 12 built-in + Chrom Devtool MCP | ~24,800 tokens | ~323 tokens | **~98.7%** |
 
 **Reducing the opencode's total tokens from ~10k to ~3.7K**
