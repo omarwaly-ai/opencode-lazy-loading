@@ -36,11 +36,11 @@ Every message sent to the LLM includes full tool definitions — descriptions, p
 The following example table  for defult Opencode setup which is ~10k Tokens + Chrom devtool MCP
 | Setup | Before | After | Saved |
 |---|---|---|---|
-| 12 built-in tools | ~6,900 tokens | ~650 tokens | **~91%** |
+| 12 built-in tools | ~6,900 tokens | ~323 tokens | **~95%** |
 | Chrom Devtool MCP | ~17,900 tokens | ZERO tokens | **~100%** |
-| 12 built-in + 10 MCPs | ~~6,900 tokens | ~650 tokens | **~91%** |
+| 12 built-in + 10 MCPs | ~~6,900 tokens | ~650 tokens | **~95%** |
 
-**Reducing the opencode's total tokens from ~10k to ~4.9K**
+**Reducing the opencode's total tokens from ~10k to ~3.7K**
 Savings scale with the number of tools. The more MCP servers you connect, the more you save.
 
 ---
@@ -82,7 +82,7 @@ Delete the file. Everything returns to normal immediately.
 
 ## Compatibility
 
-- **opencode** v1.14+
+- **opencode** 1.17.10+
 - **All LLM providers** — DeepSeek, OpenAI, Anthropic, OpenRouter, and any OpenAI-compatible endpoint
 - **All MCP servers** — detected automatically
 - **Single file, zero dependencies** — no npm packages, no tokenizer, no background process
