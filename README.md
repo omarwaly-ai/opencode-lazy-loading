@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# OpenCode Lazy Load
+# OpenCode Lazy Loading
 
 **On-demand tool and MCP lazy loading plugin for [opencode](https://opencode.ai)**
 
